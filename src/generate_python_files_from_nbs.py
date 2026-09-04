@@ -5,7 +5,7 @@ of the notebook together and removes any comments. The main function allows a us
 import sys
 import nbformat
 
-def convert_nb(target_file):
+def convert_nb(target_file: str)-> str:
     """
     Method to convert Jupyter notebook into a python file without comments or markdown.
 
