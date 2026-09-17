@@ -1,0 +1,240 @@
+[
+    {
+        "name": "pd",
+        "kind": "import",
+        "line": 1,
+        "primary_library": "pandas",
+        "third_party": [
+            "pandas"
+        ],
+        "import_statement": "import pandas as pd",
+        "import_path": "pandas"
+    },
+    {
+        "name": "sns",
+        "kind": "import",
+        "line": 2,
+        "primary_library": "seaborn",
+        "third_party": [
+            "seaborn"
+        ],
+        "import_statement": "import seaborn as sns",
+        "import_path": "seaborn"
+    },
+    {
+        "name": "nan",
+        "kind": "import",
+        "line": 3,
+        "primary_library": "numpy.nan",
+        "third_party": [
+            "numpy.nan"
+        ],
+        "import_statement": "from numpy import nan",
+        "import_path": "numpy.nan"
+    },
+    {
+        "name": "np",
+        "kind": "import",
+        "line": 4,
+        "primary_library": "numpy",
+        "third_party": [
+            "numpy"
+        ],
+        "import_statement": "import numpy as np",
+        "import_path": "numpy"
+    },
+    {
+        "name": "plt",
+        "kind": "import",
+        "line": 5,
+        "primary_library": "matplotlib.pyplot",
+        "third_party": [
+            "matplotlib.pyplot"
+        ],
+        "import_statement": "import matplotlib.pyplot as plt",
+        "import_path": "matplotlib.pyplot"
+    },
+    {
+        "name": "linear_model",
+        "kind": "import",
+        "line": 6,
+        "primary_library": "sklearn.linear_model",
+        "third_party": [
+            "sklearn.linear_model"
+        ],
+        "import_statement": "from sklearn import linear_model",
+        "import_path": "sklearn.linear_model"
+    },
+    {
+        "name": "LinearRegression",
+        "kind": "import",
+        "line": 7,
+        "primary_library": "sklearn.linear_model.LinearRegression",
+        "third_party": [
+            "sklearn.linear_model.LinearRegression"
+        ],
+        "import_statement": "from sklearn.linear_model import LinearRegression",
+        "import_path": "sklearn.linear_model.LinearRegression"
+    },
+    {
+        "name": "train_test_split",
+        "kind": "import",
+        "line": 8,
+        "primary_library": "sklearn.model_selection.train_test_split",
+        "third_party": [
+            "sklearn.model_selection.train_test_split"
+        ],
+        "import_statement": "from sklearn.model_selection import train_test_split",
+        "import_path": "sklearn.model_selection.train_test_split"
+    },
+    {
+        "name": "f",
+        "kind": "variable",
+        "line": 9,
+        "primary_library": "pandas",
+        "third_party": [
+            "pandas"
+        ]
+    },
+    {
+        "name": "df",
+        "kind": "variable",
+        "line": 16,
+        "primary_library": "notebook_sample",
+        "third_party": [
+            "notebook_sample",
+            "pandas"
+        ]
+    },
+    {
+        "name": "X",
+        "kind": "variable",
+        "line": 28,
+        "primary_library": "notebook_sample",
+        "third_party": [
+            "notebook_sample",
+            "pandas"
+        ]
+    },
+    {
+        "name": "Y",
+        "kind": "variable",
+        "line": 30,
+        "primary_library": "notebook_sample",
+        "third_party": [
+            "notebook_sample",
+            "pandas"
+        ]
+    },
+    {
+        "name": "X_train",
+        "kind": "variable",
+        "line": 32,
+        "primary_library": "notebook_sample",
+        "third_party": [
+            "notebook_sample",
+            "pandas",
+            "sklearn.model_selection.train_test_split"
+        ]
+    },
+    {
+        "name": "X_test",
+        "kind": "variable",
+        "line": 32,
+        "primary_library": "notebook_sample",
+        "third_party": [
+            "notebook_sample",
+            "pandas",
+            "sklearn.model_selection.train_test_split"
+        ]
+    },
+    {
+        "name": "Y_train",
+        "kind": "variable",
+        "line": 32,
+        "primary_library": "notebook_sample",
+        "third_party": [
+            "notebook_sample",
+            "pandas",
+            "sklearn.model_selection.train_test_split"
+        ]
+    },
+    {
+        "name": "Y_test",
+        "kind": "variable",
+        "line": 32,
+        "primary_library": "notebook_sample",
+        "third_party": [
+            "notebook_sample",
+            "pandas",
+            "sklearn.model_selection.train_test_split"
+        ]
+    },
+    {
+        "name": "lm",
+        "kind": "variable",
+        "line": 33,
+        "primary_library": "sklearn.linear_model.LinearRegression",
+        "third_party": [
+            "sklearn.linear_model.LinearRegression"
+        ]
+    },
+    {
+        "name": "predictions",
+        "kind": "variable",
+        "line": 36,
+        "primary_library": "notebook_sample",
+        "third_party": [
+            "notebook_sample",
+            "pandas",
+            "sklearn.linear_model.LinearRegression",
+            "sklearn.model_selection.train_test_split"
+        ]
+    },
+    {
+        "name": "mean_squared_error",
+        "kind": "import",
+        "line": 40,
+        "primary_library": "sklearn.metrics.mean_squared_error",
+        "third_party": [
+            "sklearn.metrics.mean_squared_error"
+        ],
+        "import_statement": "from sklearn.metrics import mean_squared_error,r2_score",
+        "import_path": "sklearn.metrics.mean_squared_error"
+    },
+    {
+        "name": "r2_score",
+        "kind": "import",
+        "line": 40,
+        "primary_library": "sklearn.metrics.r2_score",
+        "third_party": [
+            "sklearn.metrics.r2_score"
+        ],
+        "import_statement": "from sklearn.metrics import mean_squared_error,r2_score",
+        "import_path": "sklearn.metrics.r2_score"
+    },
+    {
+        "name": "sqrt",
+        "kind": "import",
+        "line": 41,
+        "primary_library": "math.sqrt",
+        "third_party": [
+            "math.sqrt"
+        ],
+        "import_statement": "from math import sqrt",
+        "import_path": "math.sqrt"
+    },
+    {
+        "name": "rmse",
+        "kind": "variable",
+        "line": 42,
+        "primary_library": "notebook_sample",
+        "third_party": [
+            "notebook_sample",
+            "pandas",
+            "sklearn.linear_model.LinearRegression",
+            "sklearn.metrics.mean_squared_error",
+            "sklearn.model_selection.train_test_split"
+        ]
+    }
+]

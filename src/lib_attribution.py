@@ -1,7 +1,7 @@
 """
 lib_attribution.py
 
-Determine which library (stdlib, third-party, or the local script itself)
+Determine which library (third-party, or the local script itself)
 every variable, function, and class in a Python script ultimately traces
 back to.
 
@@ -80,7 +80,7 @@ def _classify(module_name: str | None, in_builtin: bool, script_module: str) -> 
     if top == "builtins":
         return ("builtin", "builtins")
     if top in STDLIB_MODULES:
-        return ("stdlib", top)
+        return ("third_party", top)
     return ("third_party", top)
 
 
@@ -110,9 +110,12 @@ class LibraryAttributor:
 
     # ---------- pass 1: structure (pure ast, no jedi needed) ----------
 
-    def _add_def_node(self, name: str, line: int, col: int, kind: str) -> str:
+    def _add_def_node(self, name: str, line: int, col: int, kind: str,
+                      **attributes: str) -> str:
         node_id = f"{name}@{line}:{col}"
-        self.graph.add_node(node_id, name=name, kind=kind, line=line, category="local")
+        self.graph.add_node(
+            node_id, name=name, kind=kind, line=line, category="local", **attributes
+        )
         self._by_name_line[(name, line)] = node_id
         self._by_name.setdefault(name, []).append(node_id)
         return node_id
@@ -161,11 +164,14 @@ class LibraryAttributor:
                 yield n
 
     def _handle_import(self, node: ast.Import | ast.ImportFrom) -> None:
+        statement = ast.get_source_segment(self.source, node) or ""
         if isinstance(node, ast.Import):
             for alias in node.names:
                 top = alias.name.split(".")[0]
                 bound = alias.asname or alias.name.split(".")[0]
-                self._record_import(bound, node.lineno, node.col_offset, top)
+                self._record_import(
+                    bound, node.lineno, node.col_offset, top, alias.name, statement
+                )
         else:
             if node.level and not node.module:
                 top = None  # plain relative import, e.g. `from . import x`
@@ -174,21 +180,40 @@ class LibraryAttributor:
             for alias in node.names:
                 bound = alias.asname or alias.name
                 if top is None:
-                    self._record_import(bound, node.lineno, node.col_offset, None, relative=True)
+                    import_path = alias.name
+                    self._record_import(
+                        bound, node.lineno, node.col_offset, None, import_path,
+                        statement, relative=True
+                    )
                 else:
-                    self._record_import(bound, node.lineno, node.col_offset, top)
+                    import_path = f"{node.module}.{alias.name}"
+                    self._record_import(
+                        bound, node.lineno, node.col_offset, top, import_path, statement
+                    )
 
-    def _record_import(self, bound_name: str, line: int, col: int, top: str | None, relative: bool = False) -> None:
-        nid = self._add_def_node(bound_name, line, col, "import")
+    def _record_import(
+        self,
+        bound_name: str,
+        line: int,
+        col: int,
+        top: str | None,
+        import_path: str,
+        statement: str,
+        relative: bool = False,
+    ) -> None:
+        nid = self._add_def_node(
+            bound_name, line, col, "import",
+            import_path=import_path, import_statement=statement,
+        )
         if relative:
             lib_id = self._add_lib_node("relative", self.script_module)
             self.graph.add_edge(nid, lib_id, relation="imports")
             self._imports_by_name[bound_name] = ("relative", self.script_module)
             return
-        category = "stdlib" if top in STDLIB_MODULES else ("builtin" if top == "builtins" else "third_party")
-        lib_id = self._add_lib_node(category, top)
+        category = "third_party"
+        lib_id = self._add_lib_node(category, import_path)
         self.graph.add_edge(nid, lib_id, relation="imports")
-        self._imports_by_name[bound_name] = (category, top)
+        self._imports_by_name[bound_name] = (category, import_path)
 
     # ---------- pass 2: resolve references ----------
     #
@@ -237,13 +262,12 @@ class LibraryAttributor:
                     continue
 
                 libraries = self.base_libraries(target)
-                for category in ("third_party", "stdlib"):
-                    for key in libraries[category]:
-                        self.graph.add_edge(
-                            node_id,
-                            self._add_lib_node(category, key),
-                            relation="uses",
-                        )
+                for key in libraries["third_party"]:
+                    self.graph.add_edge(
+                        node_id,
+                        self._add_lib_node("third_party", key),
+                        relation="uses",
+                    )
 
     def _resolve_with_jedi(self, line: int, col: int):
         """Yield (local_node_id | 'skip' | None, category_or_None, key_or_None).
@@ -317,7 +341,7 @@ class LibraryAttributor:
 
     def base_libraries(self, node_id: str) -> dict[str, set[str]]:
         """Every library reachable from this node, grouped by category."""
-        out: dict[str, set[str]] = {"stdlib": set(), "third_party": set(), "builtin": set(), "relative": set()}
+        out: dict[str, set[str]] = {"third_party": set(), "builtin": set(), "relative": set()}
         if node_id not in self.graph:
             return out
         for desc in nx.descendants(self.graph, node_id) | {node_id}:
@@ -332,19 +356,22 @@ class LibraryAttributor:
             if data.get("kind") == "library":
                 continue
             libs = self.base_libraries(node_id)
-            flat = sorted(libs["third_party"]) + sorted(libs["stdlib"])
+            flat = sorted(libs["third_party"])
             primary = flat[0] if flat else (
                 "builtins" if libs["builtin"] else
                 ("<relative import>" if libs["relative"] else "local-only")
             )
-            rows.append({
+            row = {
                 "name": data["name"],
                 "kind": data["kind"],
                 "line": data["line"],
                 "primary_library": primary,
                 "third_party": sorted(libs["third_party"]),
-                "stdlib": sorted(libs["stdlib"]),
-            })
+            }
+            if data.get("kind") == "import":
+                row["import_statement"] = data.get("import_statement", "")
+                row["import_path"] = data.get("import_path", data["name"])
+            rows.append(row)
         rows.sort(key=lambda r: r["line"])
         return rows
 
@@ -419,7 +446,7 @@ if __name__ == "__main__":
         print(header)
         print("-" * len(header))
         for r in rows:
-            extra_libs = [l for l in (r["third_party"] + r["stdlib"]) if l != r["primary_library"]]
+            extra_libs = [l for l in r["third_party"] if l != r["primary_library"]]
             extra = ("+" + ",".join(extra_libs)) if extra_libs else ""
             print(f'{r["line"]:>4}  {r["name"].ljust(w_name)}  {r["kind"].ljust(w_kind)}  {r["primary_library"].ljust(w_lib)}  {extra}')
 
