@@ -436,7 +436,7 @@ if __name__ == "__main__":
 
     if args.json:
         # print(json.dumps(rows, indent=2))
-        with open('sample_lib_attr.json', 'w') as outfile:
+        with open(args.script.replace('_no_comments.py', '_vars.json'), 'w') as outfile:
             json.dump(rows, outfile)
     else:
         w_name = max([len("name")] + [len(r["name"]) for r in rows])

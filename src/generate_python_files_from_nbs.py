@@ -26,11 +26,13 @@ def convert_nb(target_file: str)-> str:
             for line in cell['source'].splitlines():
                 if line == "":
                     cell_code += '\n'
-                elif (line[0] != '#' or line[0] != '%' or line[0] != '!'):
+                elif (line[0] != '#' and line[0] != '%' and line[0] != '!'):
                     cell_code += line + '\n'
 
             if (cell_code != "" and cell_code[-1] != '\n'):
                 cell_code += '\n'
+        else:
+            continue
         ret += cell_code
 
     return ret

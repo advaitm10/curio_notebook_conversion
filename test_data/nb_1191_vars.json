@@ -1,0 +1,126 @@
+[
+    {
+        "name": "pd",
+        "kind": "import",
+        "line": 1,
+        "primary_library": "pandas",
+        "third_party": [
+            "pandas"
+        ],
+        "import_statement": "import pandas as pd",
+        "import_path": "pandas"
+    },
+    {
+        "name": "np",
+        "kind": "import",
+        "line": 2,
+        "primary_library": "numpy",
+        "third_party": [
+            "numpy"
+        ],
+        "import_statement": "import numpy as np",
+        "import_path": "numpy"
+    },
+    {
+        "name": "Path",
+        "kind": "import",
+        "line": 3,
+        "primary_library": "pathlib.Path",
+        "third_party": [
+            "pathlib.Path"
+        ],
+        "import_statement": "from pathlib import Path",
+        "import_path": "pathlib.Path"
+    },
+    {
+        "name": "LinearRegression",
+        "kind": "import",
+        "line": 4,
+        "primary_library": "sklearn.linear_model.LinearRegression",
+        "third_party": [
+            "sklearn.linear_model.LinearRegression"
+        ],
+        "import_statement": "from sklearn.linear_model import LinearRegression",
+        "import_path": "sklearn.linear_model.LinearRegression"
+    },
+    {
+        "name": "df",
+        "kind": "variable",
+        "line": 5,
+        "primary_library": "pandas",
+        "third_party": [
+            "pandas",
+            "pathlib"
+        ]
+    },
+    {
+        "name": "returns",
+        "kind": "variable",
+        "line": 11,
+        "primary_library": "pandas",
+        "third_party": [
+            "pandas",
+            "pathlib",
+            "test_data"
+        ]
+    },
+    {
+        "name": "df",
+        "kind": "variable",
+        "line": 15,
+        "primary_library": "test_data",
+        "third_party": [
+            "test_data"
+        ]
+    },
+    {
+        "name": "y",
+        "kind": "variable",
+        "line": 17,
+        "primary_library": "test_data",
+        "third_party": [
+            "test_data"
+        ]
+    },
+    {
+        "name": "x",
+        "kind": "variable",
+        "line": 18,
+        "primary_library": "test_data",
+        "third_party": [
+            "test_data"
+        ]
+    },
+    {
+        "name": "X_binary_encoded",
+        "kind": "variable",
+        "line": 22,
+        "primary_library": "pandas",
+        "third_party": [
+            "pandas",
+            "test_data"
+        ]
+    },
+    {
+        "name": "mean_squared_error",
+        "kind": "import",
+        "line": 26,
+        "primary_library": "sklearn.metrics.mean_squared_error",
+        "third_party": [
+            "sklearn.metrics.mean_squared_error"
+        ],
+        "import_statement": "from sklearn.metrics import mean_squared_error, r2_score",
+        "import_path": "sklearn.metrics.mean_squared_error"
+    },
+    {
+        "name": "r2_score",
+        "kind": "import",
+        "line": 26,
+        "primary_library": "sklearn.metrics.r2_score",
+        "third_party": [
+            "sklearn.metrics.r2_score"
+        ],
+        "import_statement": "from sklearn.metrics import mean_squared_error, r2_score",
+        "import_path": "sklearn.metrics.r2_score"
+    }
+]
