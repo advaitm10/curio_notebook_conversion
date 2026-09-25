@@ -11,18 +11,10 @@ Strategy
    def, and class def, plus exact line/column positions of every name
    referenced on their right-hand side / body. This part never touches
    jedi and never needs any of the script's actual dependencies installed.
-2. `jedi.Script.goto()` is used as a best-effort *first attempt* at
-   resolving a given name reference (e.g. "does `np` at line 14 col 6
-   refer to the `numpy` import?"). When the referenced package actually is
-   installed, this gives more precise attribution (following aliases,
-   re-exports, and cross-file local imports).
-3. When jedi can't resolve a reference -- which happens constantly when
-   analyzing a script whose dependencies aren't installed on this machine,
-   since Jedi needs to locate a module on disk to build a `Name` for it --
-   we fall back to a plain, file-local heuristic: look up the name in our
-   own import table, or connect it to the nearest prior definition of that
-   name in the file. This is not scope-accurate (no real LEGB modeling),
-   but it doesn't need anything importable, just the text of the file.
+2. Name references are resolved with a deterministic, file-local heuristic:
+   look up the name in our own import table, or connect it to the nearest
+   prior definition of that name in the file. This is not scope-accurate (no
+   real LEGB modeling), but it needs only the text of the file.
 4. `networkx` ties it together as a dependency digraph: every definition is
    a node, edges point either to another local definition it uses, or to a
    library "leaf" node. A definition's full set of base libraries is every
@@ -46,7 +38,6 @@ import ast
 import sys
 from pathlib import Path
 
-import jedi
 import networkx as nx
 
 STDLIB_MODULES = set(sys.stdlib_module_names)
@@ -70,12 +61,16 @@ def _normalize_module(mod: str) -> str:
     return MODULE_ALIASES.get(mod, mod)
 
 
-def _classify(module_name: str | None, in_builtin: bool, script_module: str) -> tuple[str, str] | None:
-    """Return (category, library_key) for a resolved Jedi definition."""
+def _classify(
+    module_name: str | None,
+    in_builtin: bool,
+    script_modules: set[str],
+) -> tuple[str, str] | None:
+    """Return (category, library_key) for a resolved module definition."""
     if not module_name:
         return None
-    if module_name == script_module:
-        return ("local", script_module)
+    if module_name in script_modules:
+        return ("local", module_name)
     top = _normalize_module(module_name).split(".")[0]
     if top == "builtins":
         return ("builtin", "builtins")
@@ -85,16 +80,22 @@ def _classify(module_name: str | None, in_builtin: bool, script_module: str) -> 
 
 
 class LibraryAttributor:
-    def __init__(self, source: str, path: str = "script.py"):
+    def __init__(self, source: str, path: str | None = None):
         self.source = source
-        self.path = path
-        self.script_module = Path(path).stem
-        # Jedi is only ever used as an opportunistic first attempt; every
-        # call site below tolerates it failing or returning nothing.
-        try:
-            self.script = jedi.Script(source, path=path)
-        except Exception:
-            self.script = None
+        # A path is optional metadata. Source-only callers never need a file.
+        self.path = path or "<source>"
+        self.script_module = Path(path).stem if path else "<source>"
+        self.script_modules = (
+            {Path(path).stem, Path(path).parent.name}
+            if path
+            else {"<source>"}
+        )
+        # Keep resolution deterministic and file-independent. Jedi can
+        # resolve a reassigned local name through the containing directory
+        # package (for example ``test_data``), which incorrectly changes the
+        # attribution of later variables. The AST/file-local resolver avoids
+        # that ambiguity and works equally with or without a path.
+        self.script = None
         self.graph = nx.DiGraph()
         # (name, line) -> node_id, used to match a jedi "local" goto result
         # back to one of our own definition nodes.
@@ -112,6 +113,12 @@ class LibraryAttributor:
 
     def _add_def_node(self, name: str, line: int, col: int, kind: str,
                       **attributes: str) -> str:
+        # Keep one canonical node for a variable name.  Notebook cells often
+        # reassign a dataframe (for example, ``df = df.dropna()``); treating
+        # that reassignment as a new library definition makes later variables
+        # inherit the script/module name rather than the dataframe's library.
+        if kind == "variable" and name in self._by_name:
+            return self._by_name[name][0]
         node_id = f"{name}@{line}:{col}"
         self.graph.add_node(
             node_id, name=name, kind=kind, line=line, category="local", **attributes
@@ -147,15 +154,20 @@ class LibraryAttributor:
             elif isinstance(node, ast.Assign):
                 for target in node.targets:
                     for name_node in self._store_names(target):
+                        is_new = name_node.id not in self._by_name
                         nid = self._add_def_node(name_node.id, node.lineno, name_node.col_offset, "variable")
-                        self._pending_ref_scans.append((nid, node.value))
+                        if is_new:
+                            self._pending_ref_scans.append((nid, node.value))
             elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                is_new = node.target.id not in self._by_name
                 nid = self._add_def_node(node.target.id, node.lineno, node.target.col_offset, "variable")
-                if node.value is not None:
+                if is_new and node.value is not None:
                     self._pending_ref_scans.append((nid, node.value))
             elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+                is_new = node.target.id not in self._by_name
                 nid = self._add_def_node(node.target.id, node.lineno, node.target.col_offset, "variable")
-                self._pending_ref_scans.append((nid, node.value))
+                if is_new:
+                    self._pending_ref_scans.append((nid, node.value))
 
     @staticmethod
     def _store_names(target: ast.AST):
@@ -285,7 +297,11 @@ class LibraryAttributor:
             results = []
         for d in results:
             try:
-                info = _classify(d.module_name, d.in_builtin_module(), self.script_module)
+                info = _classify(
+                    d.module_name,
+                    d.in_builtin_module(),
+                    self.script_modules,
+                )
             except Exception:
                 info = None
             if info is None:
@@ -376,7 +392,12 @@ class LibraryAttributor:
         return rows
 
 
-def analyze(source: str, path: str = "script.py") -> tuple[nx.DiGraph, list[dict]]:
+def analyze(source: str, path: str | None = None) -> tuple[nx.DiGraph, list[dict]]:
+    """Analyze Python source text without requiring a file path.
+
+    ``path`` is optional filename context for AST diagnostics and relative
+    imports; analysis itself uses only the supplied source text.
+    """
     attributor = LibraryAttributor(source, path)
     graph = attributor.build()
     return graph, attributor.summary()

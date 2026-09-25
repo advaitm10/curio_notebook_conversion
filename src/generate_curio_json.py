@@ -31,12 +31,12 @@ def graph_to_curio(graph: nx.DiGraph, name: str) -> dict:
                 }}
 
     # Reverse graph and build it from destination up to source, you can add merge flows to any node with multiple edges when reversed
-    flipped = graph.reversed()
+    flipped = graph.reverse()
     node_ids = dict() # Key: Node name in digraph, Value: Unique ID assigned to node name TODO: Ask Fabio how IDs are set
     for k, v in flipped.adj.items():
         # Add node to JSON
-        cur_node_id = node_ids[k]
-        converted['nodes'].append(
+        cur_node_id = node_ids.get(k, 0)
+        converted['dataflow']['nodes'].append(
             {
                 "id": cur_node_id,
                 "type": None, # Maybe just a placeholder for testing purposes?

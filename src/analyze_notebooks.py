@@ -107,8 +107,8 @@ def _cell_names(tree: ast.AST) -> set[str]:
 
 
 def _reference_edges(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Resolve loads to the nearest preceding definition and link cells."""
-    definitions: dict[str, tuple[int, int]] = {}
+    """Link each variable reference to the closest preceding cell occurrence."""
+    last_occurrence: dict[str, int] = {}
     edges: dict[tuple[int, int], dict[str, Any]] = {}
     for cell_index, cell in enumerate(cells):
         if cell.get("cell_type") != "code":
@@ -118,50 +118,53 @@ def _reference_edges(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
             tree = ast.parse(source, filename=f"cell_{cell_index}.py")
         except SyntaxError:
             continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign,
-                                 ast.NamedExpr, ast.For, ast.AsyncFor)):
-                for name in _definitions(node):
-                    definitions[name] = (cell_index, getattr(node, "lineno", 1))
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                definitions[node.name] = (cell_index, node.lineno)
-
-            if not isinstance(node, ast.Name) or not isinstance(node.ctx, ast.Load):
+        loads = {
+            node.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+        }
+        for name in sorted(loads):
+            origin = last_occurrence.get(name)
+            if origin is None or origin == cell_index:
                 continue
-            origin = definitions.get(node.id)
-            if origin is None or origin[0] == cell_index:
-                continue
-            key = (origin[0], cell_index)
+            key = (origin, cell_index)
             edge = edges.setdefault(
                 key,
                 {
-                    "source_cell": origin[0],
+                    "source_cell": origin,
                     "target_cell": cell_index,
                     "variables": [],
                 },
             )
-            if node.id not in edge["variables"]:
-                edge["variables"].append(node.id)
-        # Definitions in a cell become available to subsequent cells.
+            edge["variables"].append(name)
+
+        definitions = set()
         for node in ast.walk(tree):
-            if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign,
-                                 ast.NamedExpr, ast.For, ast.AsyncFor,
-                                 ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                for name in _definitions(node):
-                    definitions[name] = (cell_index, getattr(node, "lineno", 1))
+            if isinstance(node, ast.Import):
+                definitions.update(
+                    alias.asname or alias.name.split(".", 1)[0]
+                    for alias in node.names
+                )
+            elif isinstance(node, ast.ImportFrom):
+                definitions.update(alias.asname or alias.name for alias in node.names)
+            elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign,
+                                   ast.NamedExpr, ast.For, ast.AsyncFor,
+                                   ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                definitions.update(_definitions(node))
+        for name in loads | definitions:
+            last_occurrence[name] = cell_index
 
     for edge in edges.values():
         edge["variables"].sort()
     return sorted(edges.values(), key=lambda edge: (edge["source_cell"], edge["target_cell"]))
 
 
-def analyze_notebook(notebook_path: Path, attribution_path: Path) -> dict[str, Any]:
+def analyze_notebook(notebook_path: Path, attribution: dict) -> dict[str, Any]:
     notebook = _read_json(notebook_path)
-    attribution = _read_json(attribution_path)
     if not isinstance(notebook, dict) or not isinstance(notebook.get("cells"), list):
         raise ValueError(f"{notebook_path} is not a valid notebook")
     if not isinstance(attribution, list) or not all(isinstance(row, dict) for row in attribution):
-        raise ValueError(f"{attribution_path} must contain attribution objects")
+        raise ValueError(f"{attribution} must contain attribution objects")
 
     library_statements: dict[str, set[str]] = {}
     for row in attribution:
@@ -223,6 +226,7 @@ def analyze_notebook(notebook_path: Path, attribution_path: Path) -> dict[str, A
             {
                 "cell_index": index,
                 "execution_count": execution_count,
+                "source": source,
                 "cell_type": _cell_type(labels),
                 "import_statements": sorted(import_statements),
             }
@@ -231,9 +235,8 @@ def analyze_notebook(notebook_path: Path, attribution_path: Path) -> dict[str, A
     edges = _reference_edges(notebook["cells"])
     return {
         "format": "curio-notebook-cell-analysis",
-        "version": 4,
+        "version": 5,
         "notebook": str(notebook_path),
-        "attribution_input": str(attribution_path),
         "summary": {
             "code_cells": len(cells),
             "edges": len(edges),
@@ -252,7 +255,7 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Flag to dump a json file")
     args = parser.parse_args()
     try:
-        rendered = analyze_notebook(args.notebook, args.attribution)
+        rendered = analyze_notebook(args.notebook, _read_json(args.attribution))
         serialized = json.dumps(rendered, indent=2, ensure_ascii=False) + "\n"
         if args.json:
             output_path = args.notebook.with_name(f"{args.notebook.stem}_analysis.json")
