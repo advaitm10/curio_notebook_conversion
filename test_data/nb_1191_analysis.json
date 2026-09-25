@@ -1,11 +1,11 @@
 {
   "format": "curio-notebook-cell-analysis",
-  "version": 4,
+  "version": 5,
   "notebook": "/home/advaitm10/notebook_converters/curio_notebook_conversion/test_data/nb_1191.ipynb",
   "attribution_input": "/home/advaitm10/notebook_converters/curio_notebook_conversion/test_data/nb_1191_vars.json",
   "summary": {
     "code_cells": 16,
-    "edges": 9,
+    "edges": 10,
     "cell_types": {
       "data collection": 1,
       "exploration": 2,
@@ -18,12 +18,14 @@
     {
       "cell_index": 1,
       "execution_count": 1,
+      "source": "import pandas as pd\nimport numpy as np\nfrom pathlib import Path\nfrom sklearn.linear_model import LinearRegression\n%matplotlib inline",
       "cell_type": "unclassified",
       "import_statements": []
     },
     {
       "cell_index": 3,
       "execution_count": 2,
+      "source": "df = pd.read_csv(\n    Path(\"../Resources/oil_futures.csv\"), parse_dates=True, index_col=\"Date\"\n)\n\ndf.head()",
       "cell_type": "data collection",
       "import_statements": [
         "from pathlib import Path",
@@ -33,6 +35,7 @@
     {
       "cell_index": 4,
       "execution_count": 3,
+      "source": "# More on settle prices: https://www.investopedia.com/terms/s/settlementprice.asp\ndf.Settle.plot()",
       "cell_type": "exploration",
       "import_statements": [
         "from pathlib import Path",
@@ -42,6 +45,7 @@
     {
       "cell_index": 6,
       "execution_count": 4,
+      "source": "# Create a column of the settle price returns\nreturns = df.Settle.pct_change() * 100\nreturns.plot()",
       "cell_type": "exploration",
       "import_statements": [
         "from pathlib import Path",
@@ -51,6 +55,7 @@
     {
       "cell_index": 7,
       "execution_count": 10,
+      "source": "# Add columns of returns and lagged returns to the data frame\n# The lagged returns are created to associate a date with its returns\ndf['Return'] = returns.copy()\ndf['Lag_Return'] = returns.shift()\ndf = df.dropna()\ndf.head()",
       "cell_type": "wrangling",
       "import_statements": [
         "from pathlib import Path",
@@ -60,6 +65,7 @@
     {
       "cell_index": 9,
       "execution_count": 11,
+      "source": "# Set the Dependent variable y to the `Return`\ny = df.Return",
       "cell_type": "unclassified",
       "import_statements": [
         "from pathlib import Path",
@@ -69,6 +75,7 @@
     {
       "cell_index": 10,
       "execution_count": 12,
+      "source": "# Select the `Lagged_Return` and assign the DataFrame to X\nx = df.Lag_Return.to_frame()\nx.head()",
       "cell_type": "unclassified",
       "import_statements": [
         "from pathlib import Path",
@@ -78,12 +85,14 @@
     {
       "cell_index": 11,
       "execution_count": 14,
+      "source": "# Access the weekofyear attribute from the index\n# Create a new column with this called `Week_of_year`\nx['week_of_year'] = x.index.weekofyear\nx.head()",
       "cell_type": "unclassified",
       "import_statements": []
     },
     {
       "cell_index": 13,
       "execution_count": 18,
+      "source": "# Get a dummy variable for each week of the year\nX_binary_encoded = pd.get_dummies(x, columns=['week_of_year'])\nX_binary_encoded.head()",
       "cell_type": "unclassified",
       "import_statements": [
         "import pandas as pd"
@@ -92,6 +101,7 @@
     {
       "cell_index": 14,
       "execution_count": 10,
+      "source": "X_binary_encoded.shape",
       "cell_type": "unclassified",
       "import_statements": [
         "import pandas as pd"
@@ -100,18 +110,21 @@
     {
       "cell_index": 16,
       "execution_count": 11,
+      "source": "# Create a Linear Regression model and fit it to the data\n# YOUR CODE HERE!",
       "cell_type": "unclassified",
       "import_statements": []
     },
     {
       "cell_index": 17,
       "execution_count": 12,
+      "source": "# Create predictions using the trained model and the `X_binary_encoded` data\n# YOUR CODE HERE!\n\n# List the first 10 predictions\n# YOUR CODE HERE!",
       "cell_type": "unclassified",
       "import_statements": []
     },
     {
       "cell_index": 19,
       "execution_count": 13,
+      "source": "from sklearn.metrics import mean_squared_error, r2_score\n\n# Calculate r2_score (r-squared)\n# YOUR CODE HERE!",
       "cell_type": "unclassified",
       "import_statements": [
         "from sklearn.linear_model import LinearRegression",
@@ -121,18 +134,21 @@
     {
       "cell_index": 20,
       "execution_count": 14,
+      "source": "# Calculate mean squared error \n# Remember, a \"good\" MSE score will be close to zero while a \"good\" R2 Score will be close to 1.\n# YOUR CODE HERE!",
       "cell_type": "unclassified",
       "import_statements": []
     },
     {
       "cell_index": 21,
       "execution_count": 15,
+      "source": "# Using mean squared error above, calculate root-mean-squared error (RMSE)\n# YOUR CODE HERE!",
       "cell_type": "unclassified",
       "import_statements": []
     },
     {
       "cell_index": 22,
       "execution_count": 16,
+      "source": "# Print the r2, mser, rmse, and standard deviation\nprint(f\"R-squared (R2 ): {r2}\")\nprint(f\"Mean Squared Error (MSE): {mse}\")\nprint(f\"Root Mean Squared Error (RMSE): {rmse}\")\nprint(f\"Standard Deviation of Futures Return: {np.std(y)}\")",
       "cell_type": "unclassified",
       "import_statements": [
         "import numpy as np"
@@ -149,6 +165,13 @@
     },
     {
       "source_cell": 3,
+      "target_cell": 13,
+      "variables": [
+        "pd"
+      ]
+    },
+    {
+      "source_cell": 4,
       "target_cell": 6,
       "variables": [
         "df"
@@ -158,6 +181,7 @@
       "source_cell": 6,
       "target_cell": 7,
       "variables": [
+        "df",
         "returns"
       ]
     },
@@ -169,7 +193,7 @@
       ]
     },
     {
-      "source_cell": 7,
+      "source_cell": 9,
       "target_cell": 10,
       "variables": [
         "df"
@@ -190,7 +214,7 @@
       ]
     },
     {
-      "source_cell": 10,
+      "source_cell": 11,
       "target_cell": 13,
       "variables": [
         "x"
