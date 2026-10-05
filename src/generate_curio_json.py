@@ -6,8 +6,30 @@ import networkx as nx
 import pickle
 import json
 import sys
+import uuid
 
-def graph_to_curio(graph: nx.DiGraph, name: str) -> dict:
+def generate_id() -> str:
+    return uuid.uuid4().hex
+
+
+DEFAULT_NODE_TYPE_MAP: dict[str, str] = {
+    "data collection": "curio.builtin/data-loading@1",
+    "wrangling": "curio.builtin/data-transformation@1",
+    "training": "curio.builtin/computation-analysis@1",
+    "evaluation": "curio.builtin/computation-analysis@1",
+    "exploration": "curio.builtin/data-transformation@1",
+    "unclassified": "curio.builtin/data-transformation@1",
+}
+
+
+def _node_type_for_label(label: str | None, override: dict[str, str] | None = None, default: str = "curio.builtin/data-transformation@1") -> str:
+    mapping = DEFAULT_NODE_TYPE_MAP if override is None else {**DEFAULT_NODE_TYPE_MAP, **override}
+    if not label:
+        return default
+    return mapping.get(label, default)
+
+
+def graph_to_curio(graph: nx.DiGraph, name: str, node_type_map: dict[str, str] | None = None, default_type: str = "curio.builtin/data-transformation@1") -> dict:
     """
     Method to convert NetworkX DiGraph object into a JSON in the format required for import into Curio.
 
@@ -48,20 +70,19 @@ def graph_to_curio(graph: nx.DiGraph, name: str) -> dict:
         for row, node in enumerate(nodes):
             node_positions[node] = {"x": layer * 500, "y": row * 300}
 
-    # Reverse graph and build it from destination up to source, you can add merge flows to any node with multiple edges when reversed
-    flipped = graph.reverse()
-    node_ids = dict() # Key: Node name in digraph, Value: Unique ID assigned to node name TODO: Ask Fabio how IDs are set
-    for k, v in flipped.adj.items():
-        # Add node to JSON
-        cur_node_id = node_ids.get(k, 0)
+    node_ids = {node: generate_id() for node in graph.nodes}
+    for node in graph.nodes:
+        cur_node_id = node_ids[node]
+        node_label = graph.nodes[node].get('cell_type')
+        node_type = _node_type_for_label(node_label, override=node_type_map, default=default_type)
         converted['dataflow']['nodes'].append(
             {
                 "id": cur_node_id,
-                "type": "curio.builtin/data-loading@1", # Maybe just a placeholder for testing purposes?
-                "x": node_positions[k]["x"],
-                "y": node_positions[k]["y"],
-                "saveOutputDataset": False, # Double check with Fabio
-                "content": flipped.nodes[k]['source'],
+                "type": node_type,
+                "x": node_positions[node]["x"],
+                "y": node_positions[node]["y"],
+                "saveOutputDataset": False,
+                "content": graph.nodes[node].get('source', ''),
                 "out": "DEFAULT",
                 "in": "DEFAULT",
                 "goal": "",
@@ -71,18 +92,17 @@ def graph_to_curio(graph: nx.DiGraph, name: str) -> dict:
             }
         )
 
-        # Check if mergeflow is necessary
-        merge_flow_id = None
-        if len(v) > 1:
-            merge_flow_id = 1 # TODO: Set merge_flow_id
-            incoming_x = sum(node_positions[node]["x"] for node in v) / len(v)
-            incoming_y = sum(node_positions[node]["y"] for node in v) / len(v)
+        incoming = list(graph.predecessors(node))
+        if len(incoming) > 1:
+            merge_flow_id = generate_id()
+            incoming_x = sum(node_positions[source]["x"] for source in incoming) / len(incoming)
+            incoming_y = sum(node_positions[source]["y"] for source in incoming) / len(incoming)
             converted['dataflow']['nodes'].append(
                 {
                     "id": merge_flow_id,
                     "type": "curio.builtin/merge-flow@1",
-                    "x": (incoming_x + node_positions[k]["x"]) / 2,
-                    "y": (incoming_y + node_positions[k]["y"]) / 2,
+                    "x": (incoming_x + node_positions[node]["x"]) / 2,
+                    "y": (incoming_y + node_positions[node]["y"]) / 2,
                     "saveOutputDataset": False,
                     "content": "",
                     "out": "DEFAULT",
@@ -94,23 +114,37 @@ def graph_to_curio(graph: nx.DiGraph, name: str) -> dict:
                 }
             )
 
-        # Add edges to JSON
-        count = 0
-        for i in v:
-            targetHandle = f"in_{i}" if len(v) > 1 else "in"
-            target_id = node_ids.get(i, 0)
+            for predecessor in incoming:
+                converted['dataflow']['edges'].append(
+                    {
+                        "id": f"reactflow__edge-{node_ids[predecessor]}out-{merge_flow_id}in",
+                        "source": node_ids[predecessor],
+                        "target": merge_flow_id,
+                        "sourceHandle": "out",
+                        "targetHandle": "in"
+                    }
+                )
 
             converted['dataflow']['edges'].append(
                 {
-                    "id": f"reactflow__edge-{cur_node_id}out-{target_id}in",
-                    "source": merge_flow_id if merge_flow_id else target_id,
+                    "id": f"reactflow__edge-{merge_flow_id}out-{cur_node_id}in",
+                    "source": merge_flow_id,
                     "target": cur_node_id,
                     "sourceHandle": "out",
-                    "targetHandle": targetHandle
+                    "targetHandle": "in"
                 }
             )
-
-            count += 1 # Increase targetHandle counter by 1
+        else:
+            for predecessor in incoming:
+                converted['dataflow']['edges'].append(
+                    {
+                        "id": f"reactflow__edge-{node_ids[predecessor]}out-{cur_node_id}in",
+                        "source": node_ids[predecessor],
+                        "target": cur_node_id,
+                        "sourceHandle": "out",
+                        "targetHandle": "in"
+                    }
+                )
 
     return converted
 

@@ -10,7 +10,7 @@ import json
 import datetime
 
 if __name__ == '__main__':
-    nb_path = '../test_data/nb_1191.ipynb'
+    nb_path = '../test_data/simple_branches_2.ipynb'
     code = convert_nb(nb_path)
     _graph, var_attribution = analyze(code)
     nb_analyzed = analyze_notebook(Path(nb_path), var_attribution)
@@ -19,5 +19,5 @@ if __name__ == '__main__':
     #     pickle.dump(nb_graph, outfile)
     curio_json = graph_to_curio(nb_graph, Path(nb_path).stem)
 
-    with open(f'curio_json_test_{str(datetime.datetime.today())}.json', 'w') as outfile:
+    with open(f'curio_json_test_{str(datetime.datetime.today()).split()[0]}_2.json', 'w') as outfile:
         json.dump(curio_json, outfile)

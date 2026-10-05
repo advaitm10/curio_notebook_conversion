@@ -107,7 +107,7 @@ def _cell_names(tree: ast.AST) -> set[str]:
 
 
 def _reference_edges(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Link each variable reference to the closest preceding cell occurrence."""
+    """Link each value-producing definition to the downstream cell that reads it."""
     last_occurrence: dict[str, int] = {}
     edges: dict[tuple[int, int], dict[str, Any]] = {}
     for cell_index, cell in enumerate(cells):
@@ -123,21 +123,6 @@ def _reference_edges(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
             for node in ast.walk(tree)
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
         }
-        for name in sorted(loads):
-            origin = last_occurrence.get(name)
-            if origin is None or origin == cell_index:
-                continue
-            key = (origin, cell_index)
-            edge = edges.setdefault(
-                key,
-                {
-                    "source_cell": origin,
-                    "target_cell": cell_index,
-                    "variables": [],
-                },
-            )
-            edge["variables"].append(name)
-
         definitions = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -151,7 +136,22 @@ def _reference_edges(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
                                    ast.NamedExpr, ast.For, ast.AsyncFor,
                                    ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 definitions.update(_definitions(node))
-        for name in loads | definitions:
+        cross_cell_loads = loads - definitions
+        for name in sorted(cross_cell_loads):
+            origin = last_occurrence.get(name)
+            if origin is None or origin == cell_index:
+                continue
+            key = (origin, cell_index)
+            edge = edges.setdefault(
+                key,
+                {
+                    "source_cell": origin,
+                    "target_cell": cell_index,
+                    "variables": [],
+                },
+            )
+            edge["variables"].append(name)
+        for name in definitions:
             last_occurrence[name] = cell_index
 
     for edge in edges.values():

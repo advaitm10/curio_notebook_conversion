@@ -19,7 +19,33 @@ import pickle
 from pathlib import Path
 from typing import Any
 
+import ast
+
 import networkx as nx
+
+
+def _import_aliases(import_statements: list[str]) -> set[str]:
+    """Return variable names introduced by import statements in a cell."""
+    aliases: set[str] = set()
+    for statement in import_statements:
+        if not isinstance(statement, str):
+            continue
+        stripped = statement.strip()
+        if not stripped:
+            continue
+        try:
+            tree = ast.parse(stripped)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    aliases.add(alias.asname or alias.name.split(".", 1)[0])
+            elif isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    aliases.add(alias.asname or alias.name)
+    return aliases
+
 
 def _read_analysis(path: Path) -> dict[str, Any]:
     try:
@@ -35,10 +61,36 @@ def _read_analysis(path: Path) -> dict[str, Any]:
     return analysis
 
 
+def _is_import_only_source(source: str) -> bool:
+    """Return True when a cell contains only blank/comment/import statements."""
+    filtered: list[str] = []
+    for line in str(source).splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#", "%", "!")):
+            continue
+        filtered.append(stripped)
+    return bool(filtered) and all(
+        statement.startswith(("import ", "from ")) for statement in filtered
+    )
+
+
+def _incoming_assignment(incoming_variables: list[str]) -> str:
+    """Assign only the variables needed by this node while discarding extra tuple entries."""
+    if not incoming_variables:
+        return ""
+    if len(incoming_variables) == 1:
+        return f"{incoming_variables[0]} = arg"
+    targets = ", ".join(incoming_variables)
+    return f"{targets}, *_ = arg"
+
+
 def _source_with_imports(
-    source: str, import_statements: list[str], outgoing_variables: list[str]
+    source: str,
+    import_statements: list[str],
+    outgoing_variables: list[str],
+    incoming_variables: list[str] | None = None,
 ) -> str:
-    """Compose source with imports first and an optional outgoing return."""
+    """Compose source with imports first, optional input assignment, and output return."""
     source_lines = source.splitlines()
     existing_imports = {
         line.strip()
@@ -51,9 +103,11 @@ def _source_with_imports(
         if statement.strip() not in existing_imports
     ]
     body = source.rstrip()
-    sections = []
+    sections: list[str] = []
     if imports:
         sections.append("\n".join(imports))
+    if incoming_variables:
+        sections.append(_incoming_assignment(incoming_variables))
     if body:
         sections.append(body)
     if outgoing_variables:
@@ -69,7 +123,33 @@ def _source_with_imports(
 def build_graph(analysis: dict[str, Any]) -> nx.DiGraph:
     """Build a directed cell graph from an analyzer report."""
     graph = nx.DiGraph()
-    outgoing: dict[int, set[str]] = {}
+    valid_cells: dict[int, dict[str, Any]] = {}
+    cell_import_aliases: dict[int, set[str]] = {}
+
+    for cell in analysis["cells"]:
+        if not isinstance(cell, dict) or not isinstance(cell.get("cell_index"), int):
+            raise ValueError("Every cell must have an integer cell_index")
+        cell_index = cell["cell_index"]
+        imports = cell.get("import_statements", [])
+        if not isinstance(imports, list) or not all(
+            isinstance(statement, str) for statement in imports
+        ):
+            raise ValueError("Cell import_statements must be a list of strings")
+        source = cell.get("source", "")
+        if not isinstance(source, str):
+            raise ValueError("Cell source must be a string")
+        if not source.strip() or all(
+            not line.strip() or line.strip().startswith(("#", "%", "!"))
+            for line in source.splitlines()
+        ):
+            continue
+        if _is_import_only_source(source):
+            continue
+        valid_cells[cell_index] = cell
+        cell_import_aliases[cell_index] = _import_aliases(imports)
+
+    outgoing_by_source: dict[int, list[tuple[int, list[str]]]] = {}
+    incoming_by_target: dict[int, list[tuple[int, list[str]]]] = {}
 
     for edge in analysis["edges"]:
         if not isinstance(edge, dict):
@@ -83,36 +163,56 @@ def build_graph(analysis: dict[str, Any]) -> nx.DiGraph:
             isinstance(variable, str) for variable in variables
         ):
             raise ValueError("Edge variables must be a list of strings")
-        outgoing.setdefault(source, set()).update(variables)
-        graph.add_edge(
-            str(source),
-            str(target),
-            variables=sorted(set(variables)),
-        )
+        if source not in valid_cells or target not in valid_cells:
+            continue
 
-    for cell in analysis["cells"]:
-        if not isinstance(cell, dict) or not isinstance(cell.get("cell_index"), int):
-            raise ValueError("Every cell must have an integer cell_index")
-        cell_index = cell["cell_index"]
+        filtered = [
+            variable
+            for variable in variables
+            if variable not in cell_import_aliases.get(source, set())
+        ]
+        if not filtered:
+            continue
+
+        outgoing_by_source.setdefault(source, []).append((target, filtered))
+        incoming_by_target.setdefault(target, []).append((source, filtered))
+
+    for cell_index in sorted(valid_cells):
+        cell = valid_cells[cell_index]
         imports = cell.get("import_statements", [])
         source = cell.get("source", "")
-        if not isinstance(imports, list) or not all(
-            isinstance(statement, str) for statement in imports
-        ):
-            raise ValueError("Cell import_statements must be a list of strings")
         if not isinstance(source, str):
             raise ValueError("Cell source must be a string")
-        variables = sorted(outgoing.get(cell_index, set()))
-        cell_type = cell.get("cell_type")
+
+        incoming_variables = sorted({
+            name for _, values in incoming_by_target.get(cell_index, []) for name in values
+        })
+        outgoing_variables = sorted({
+            name for _, values in outgoing_by_source.get(cell_index, []) for name in values
+        })
+
         graph.add_node(
             str(cell_index),
             cell_index=cell_index,
             execution_count=cell.get("execution_count"),
-            cell_type=cell_type,
+            cell_type=cell.get("cell_type"),
             import_statements=sorted(set(imports)),
-            outgoing_variables=variables,
-            source=_source_with_imports(source, imports, variables),
+            outgoing_variables=outgoing_variables,
+            incoming_variables=incoming_variables,
+            source=_source_with_imports(
+                source,
+                imports,
+                outgoing_variables,
+                incoming_variables=incoming_variables,
+            ),
         )
+
+        for target_cell, edge_vars in outgoing_by_source.get(cell_index, []):
+            graph.add_edge(
+                str(cell_index),
+                str(target_cell),
+                variables=sorted(set(edge_vars)),
+            )
 
     return graph
 
