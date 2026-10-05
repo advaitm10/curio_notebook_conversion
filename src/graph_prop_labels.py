@@ -1,14 +1,16 @@
-"""Build a labeled cell dependency graph from ``analyze_notebooks.py`` JSON.
+"""Build a NetworkX cell graph from an ``analyze_notebooks.py`` report.
 
-Each graph node represents a notebook code cell.  Its ``source`` attribute
-contains the cell imports at the top, the original cell source, and a return
-statement for variables passed to downstream cells.  Each edge stores the
-variables passed from its source cell to its target cell.
+Each node represents a retained notebook code cell and stores its label,
+imports, source, and incoming/outgoing variable names. Blank, comment-only,
+and import-only cells are omitted. Imports are placed at the start of the
+generated source; incoming variables are read from ``arg`` and outgoing
+variables are returned. Each directed edge records the variables flowing
+between its source and target cells.
 
 Usage::
 
-    python graph_prop_labels.py notebook_analysis.json
-    python graph_prop_labels.py notebook_analysis.json -o notebook_graph.pkl
+    python src/graph_prop_labels.py notebook_analysis.json
+    python src/graph_prop_labels.py notebook_analysis.json -o notebook_graph.pkl
 """
 
 from __future__ import annotations
@@ -62,7 +64,7 @@ def _read_analysis(path: Path) -> dict[str, Any]:
 
 
 def _is_import_only_source(source: str) -> bool:
-    """Return True when a cell contains only blank/comment/import statements."""
+    """Return whether the source has no executable statements besides imports."""
     filtered: list[str] = []
     for line in str(source).splitlines():
         stripped = line.strip()
@@ -75,7 +77,7 @@ def _is_import_only_source(source: str) -> bool:
 
 
 def _incoming_assignment(incoming_variables: list[str]) -> str:
-    """Assign only the variables needed by this node while discarding extra tuple entries."""
+    """Create an ``arg`` assignment for the variables this cell consumes."""
     if not incoming_variables:
         return ""
     if len(incoming_variables) == 1:
@@ -90,7 +92,7 @@ def _source_with_imports(
     outgoing_variables: list[str],
     incoming_variables: list[str] | None = None,
 ) -> str:
-    """Compose source with imports first, optional input assignment, and output return."""
+    """Compose imports, optional ``arg`` ingestion, cell body, and output return."""
     source_lines = source.splitlines()
     existing_imports = {
         line.strip()
@@ -121,7 +123,12 @@ def _source_with_imports(
 
 
 def build_graph(analysis: dict[str, Any]) -> nx.DiGraph:
-    """Build a directed cell graph from an analyzer report."""
+    """Build the cell dependency graph represented by an analysis report.
+
+    The returned graph uses stringified cell indices as node IDs. Edges are
+    retained only when both endpoint cells are retained and at least one
+    non-import variable flows across them.
+    """
     graph = nx.DiGraph()
     valid_cells: dict[int, dict[str, Any]] = {}
     cell_import_aliases: dict[int, set[str]] = {}
@@ -218,6 +225,7 @@ def build_graph(analysis: dict[str, Any]) -> nx.DiGraph:
 
 
 def main() -> int:
+    """Build and pickle a graph from an analysis JSON file."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("analysis", type=Path, help="analyze_notebooks.py JSON output")
     parser.add_argument(

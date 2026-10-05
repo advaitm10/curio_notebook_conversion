@@ -1,35 +1,20 @@
-"""
-lib_attribution.py
+"""Attribute Python definitions to imports and their originating libraries.
 
-Determine which library (third-party, or the local script itself)
-every variable, function, and class in a Python script ultimately traces
-back to.
+The module parses source with :mod:`ast`, resolves references using
+deterministic file-local heuristics, and represents definitions and library
+imports as a NetworkX dependency graph. Transitive library dependencies are
+reported for variables, functions, and classes. Analysis uses source text and
+does not require the referenced third-party packages to be installed.
 
-Strategy
---------
-1. `ast` gives us reliable *structure*: every import, assignment, function
-   def, and class def, plus exact line/column positions of every name
-   referenced on their right-hand side / body. This part never touches
-   jedi and never needs any of the script's actual dependencies installed.
-2. Name references are resolved with a deterministic, file-local heuristic:
-   look up the name in our own import table, or connect it to the nearest
-   prior definition of that name in the file. This is not scope-accurate (no
-   real LEGB modeling), but it needs only the text of the file.
-4. `networkx` ties it together as a dependency digraph: every definition is
-   a node, edges point either to another local definition it uses, or to a
-   library "leaf" node. A definition's full set of base libraries is every
-   library leaf reachable from it -- so if `bar()` calls `foo()` and
-   `foo()` uses numpy, `bar` transitively picks up numpy too, even though
-   numpy never appears in `bar`'s own source line.
+This is best-effort rather than scope-complete: Python's full LEGB scoping and
+dynamic behavior (such as ``getattr``, ``exec``, and monkeypatching) are not
+modeled. Similar names in unrelated scopes can therefore be ambiguous.
 
-Deliberately NOT airtight: this trades correctness for robustness. It will
-mis-attribute genuinely ambiguous cases (e.g. two unrelated variables named
-`df` in different functions may cross-pollinate under the fallback path),
-and it can't see anything truly dynamic (`getattr`, `exec`, monkeypatching).
-What it guarantees is that it always returns *some* best-effort library for
-every variable and function, using only what's written in the file --
-never requiring `jedi.infer()`, and never requiring the referenced
-packages to be installed.
+Command-line examples::
+
+    python src/lib_attribution.py script.py
+    python src/lib_attribution.py script.py --json
+    python src/lib_attribution.py script.py --graphml dependency-graph.graphml
 """
 
 from __future__ import annotations
@@ -80,6 +65,8 @@ def _classify(
 
 
 class LibraryAttributor:
+    """Build and summarize a best-effort dependency graph for Python source."""
+
     def __init__(self, source: str, path: str | None = None):
         self.source = source
         # A path is optional metadata. Source-only callers never need a file.
@@ -134,6 +121,7 @@ class LibraryAttributor:
         return node_id
 
     def build(self) -> nx.DiGraph:
+        """Parse the source and construct definition/reference dependencies."""
         tree = ast.parse(self.source, filename=self.path)
         self._collect_definitions(tree)
         for node_id, scan_target in self._pending_ref_scans:
@@ -367,6 +355,7 @@ class LibraryAttributor:
         return out
 
     def summary(self) -> list[dict]:
+        """Return one library-attribution record for each non-library definition."""
         rows = []
         for node_id, data in self.graph.nodes(data=True):
             if data.get("kind") == "library":
@@ -393,10 +382,16 @@ class LibraryAttributor:
 
 
 def analyze(source: str, path: str | None = None) -> tuple[nx.DiGraph, list[dict]]:
-    """Analyze Python source text without requiring a file path.
+    """Analyze Python source and return its dependency graph and summary rows.
 
-    ``path`` is optional filename context for AST diagnostics and relative
-    imports; analysis itself uses only the supplied source text.
+    Args:
+        source: Python source text to analyze.
+        path: Optional filename context used for AST diagnostics and module
+            attribution. The analysis itself uses the supplied source text.
+
+    Returns:
+        A pair containing the definition/library dependency graph and summary
+        rows suitable for JSON serialization.
     """
     attributor = LibraryAttributor(source, path)
     graph = attributor.build()

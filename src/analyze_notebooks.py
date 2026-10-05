@@ -1,14 +1,21 @@
-"""Infer notebook cell labels and variable-reference edges as readable JSON.
+"""Analyze notebook cells, assign labels, and infer variable-flow edges.
 
-This is the Python replacement for ``Jupyter-Notebook-Project/analyze_notebooks.js``.
-It consumes the notebook passed to ``lib_attribution.py`` and that tool's JSON
-summary.  It uses only Python's standard-library ``ast`` module for reference
-analysis; it does not invoke ``analyze_notebook`` or the custom program
-analysis implementation.
+The module combines a notebook with the definition-to-library summary produced
+by ``lib_attribution.py``. It emits a JSON-compatible report containing code
+cell source, inferred labels, relevant imports, and edges between cells.
+Variable dependencies use Python's standard-library ``ast``: names loaded but
+not defined within a cell point to their most recent preceding definition.
+Reads alone do not replace a definition as the variable's origin.
+
+Labels are assigned by matching source lines to ``LABEL_RULES``; when multiple
+labels match, the most frequent label wins, with alphabetical ordering as the
+tie-breaker. The rules are heuristic and intentionally cover common notebook
+patterns rather than every analytics workflow.
 
 Example::
 
-    python analyze_notebooks.py notebook.ipynb attribution.json -o report.json
+    python src/analyze_notebooks.py notebook.ipynb attribution.json
+    python src/analyze_notebooks.py notebook.ipynb attribution.json --json
 """
 
 from __future__ import annotations
@@ -107,7 +114,11 @@ def _cell_names(tree: ast.AST) -> set[str]:
 
 
 def _reference_edges(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Link each value-producing definition to the downstream cell that reads it."""
+    """Link each read to its most recent preceding defining cell.
+
+    Reads do not update the origin. This preserves parallel branches that
+    consume the same value without making them depend on each other.
+    """
     last_occurrence: dict[str, int] = {}
     edges: dict[tuple[int, int], dict[str, Any]] = {}
     for cell_index, cell in enumerate(cells):
@@ -160,6 +171,16 @@ def _reference_edges(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def analyze_notebook(notebook_path: Path, attribution: dict) -> dict[str, Any]:
+    """Return cell metadata and variable-flow edges for a notebook.
+
+    Args:
+        notebook_path: Notebook whose code cells should be analyzed.
+        attribution: Definition rows returned by ``lib_attribution.analyze``.
+
+    Returns:
+        A JSON-serializable report with notebook metadata, labeled cells,
+        import statements, and source/target cell edges.
+    """
     notebook = _read_json(notebook_path)
     if not isinstance(notebook, dict) or not isinstance(notebook.get("cells"), list):
         raise ValueError(f"{notebook_path} is not a valid notebook")
@@ -249,6 +270,7 @@ def analyze_notebook(notebook_path: Path, attribution: dict) -> dict[str, Any]:
 
 
 def main() -> int:
+    """Run notebook analysis from the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("notebook", type=Path, help="The .ipynb analyzed by lib_attribution")
     parser.add_argument("attribution", type=Path, help="lib_attribution.py JSON output")

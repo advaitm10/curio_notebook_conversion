@@ -1,19 +1,23 @@
-"""
-Python file that turns a Jupyter notebook into a python file that concatenates all the code blocks
-of the notebook together and removes any comments. The main function allows a user to call the core method from the CLI.
+"""Extract notebook code-cell source for downstream Python analysis.
+
+Markdown cells are ignored. Code cells are concatenated in notebook order, and
+comment, IPython magic, and shell-escape lines beginning in column zero are
+omitted. The ``convert_nb`` function returns the text in memory; running this
+module as a script writes it to a sibling ``_no_comments.py`` file.
 """
 import sys
 import nbformat
 
-def convert_nb(target_file: str)-> str:
-    """
-    Method to convert Jupyter notebook into a python file without comments or markdown.
 
-    Parameters:
-    A string of the path to the target .ipynb file.
+def convert_nb(target_file: str) -> str:
+    """Return concatenated code-cell source from a notebook.
+
+    Args:
+        target_file: Path to the source ``.ipynb`` notebook.
 
     Returns:
-    A string representing the python file in memory
+        Python source text for attribution analysis. The notebook itself is
+        neither modified nor executed.
     """
 
     ret = ''

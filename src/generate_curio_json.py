@@ -1,6 +1,9 @@
-"""
-Python file that turns a NetworkX DiGraph object into a JSON in the format required for import into Curio. The main method allows
-a user to call the core method from the CLI.
+"""Serialize a notebook cell graph as Curio-compatible dataflow JSON.
+
+Cell labels select Curio built-in node templates using
+``DEFAULT_NODE_TYPE_MAP``. Nodes are positioned by graph depth, and a
+``curio.builtin/merge-flow@1`` node is inserted for every target with multiple
+incoming graph edges.
 """
 import networkx as nx
 import pickle
@@ -23,6 +26,11 @@ DEFAULT_NODE_TYPE_MAP: dict[str, str] = {
 
 
 def _node_type_for_label(label: str | None, override: dict[str, str] | None = None, default: str = "curio.builtin/data-transformation@1") -> str:
+    """Resolve a cell label to its Curio node type.
+
+    ``override`` entries replace matching defaults; missing and unknown labels
+    resolve to ``default``.
+    """
     mapping = DEFAULT_NODE_TYPE_MAP if override is None else {**DEFAULT_NODE_TYPE_MAP, **override}
     if not label:
         return default
@@ -30,16 +38,18 @@ def _node_type_for_label(label: str | None, override: dict[str, str] | None = No
 
 
 def graph_to_curio(graph: nx.DiGraph, name: str, node_type_map: dict[str, str] | None = None, default_type: str = "curio.builtin/data-transformation@1") -> dict:
-    """
-    Method to convert NetworkX DiGraph object into a JSON in the format required for import into Curio.
+    """Convert a NetworkX cell graph to Curio's ``dataflow`` JSON structure.
 
-    Parameters:
-    A NetworkX DiGraph object.
+    Args:
+        graph: Directed cell graph with ``source`` and ``cell_type`` node
+            attributes.
+        name: Dataflow name, typically the notebook filename without suffix.
+        node_type_map: Optional label-to-Curio-type overrides. Entries replace
+            the corresponding values in ``DEFAULT_NODE_TYPE_MAP``.
+        default_type: Curio node type for missing or unknown labels.
 
     Returns:
-    A dictionary that can be serialized into JSON.
-
-    TODO: Add arguments and returns to every node
+        A dictionary suitable for JSON serialization and Curio import.
     """
 
     converted = {'dataflow': {
