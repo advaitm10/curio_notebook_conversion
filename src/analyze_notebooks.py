@@ -99,6 +99,94 @@ def _definitions(node: ast.AST) -> set[str]:
     return names
 
 
+def _target_root_name(target: ast.AST) -> str | None:
+    """Return the object name rooted by an attribute or subscript target."""
+    while isinstance(target, (ast.Attribute, ast.Subscript)):
+        target = target.value
+    if isinstance(target, ast.Name):
+        return target.id
+    return None
+
+
+def _target_definitions(target: ast.AST) -> set[str]:
+    """Return names bound or mutated by an assignment target."""
+    names = {
+        child.id
+        for child in ast.walk(target)
+        if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store)
+    }
+    if isinstance(target, (ast.Attribute, ast.Subscript)):
+        root_name = _target_root_name(target)
+        if root_name is not None:
+            names.add(root_name)
+    return names
+
+
+def _loaded_names(nodes: list[ast.AST]) -> set[str]:
+    return {
+        child.id
+        for node in nodes
+        for child in ast.walk(node)
+        if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load)
+    }
+
+
+def _statement_effects(statement: ast.stmt) -> tuple[set[str], set[str]]:
+    """Return names read and defined when a top-level statement executes."""
+    if isinstance(statement, ast.Assign):
+        targets = statement.targets
+        loads = _loaded_names([statement.value, *targets])
+        definitions = set().union(*(_target_definitions(target) for target in targets))
+        return loads, definitions
+    if isinstance(statement, ast.AnnAssign):
+        expressions = [statement.target]
+        if statement.value is not None:
+            expressions.append(statement.value)
+        return _loaded_names(expressions), _target_definitions(statement.target)
+    if isinstance(statement, ast.AugAssign):
+        loads = _loaded_names([statement.target, statement.value])
+        if isinstance(statement.target, ast.Name):
+            loads.add(statement.target.id)
+        return loads, _target_definitions(statement.target)
+    if isinstance(statement, ast.NamedExpr):
+        return _loaded_names([statement.value]), _target_definitions(statement.target)
+    if isinstance(statement, ast.Import):
+        return set(), {
+            alias.asname or alias.name.split(".", 1)[0]
+            for alias in statement.names
+        }
+    if isinstance(statement, ast.ImportFrom):
+        return set(), {
+            alias.asname or alias.name
+            for alias in statement.names
+        }
+    if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        evaluated = [
+            *statement.decorator_list,
+            *statement.args.defaults,
+            *(value for value in statement.args.kw_defaults if value is not None),
+        ]
+        return _loaded_names(evaluated), {statement.name}
+    if isinstance(statement, ast.ClassDef):
+        evaluated = [
+            *statement.decorator_list,
+            *statement.bases,
+            *(keyword.value for keyword in statement.keywords),
+        ]
+        return _loaded_names(evaluated), {statement.name}
+
+    loads = _loaded_names([statement])
+    definitions = _definitions(statement)
+    for child in ast.walk(statement):
+        if isinstance(child, (ast.Attribute, ast.Subscript)) and isinstance(
+            child.ctx, ast.Store
+        ):
+            root_name = _target_root_name(child)
+            if root_name is not None:
+                definitions.add(root_name)
+    return loads, definitions
+
+
 def _cell_names(tree: ast.AST) -> set[str]:
     names = {
         node.id
@@ -114,10 +202,11 @@ def _cell_names(tree: ast.AST) -> set[str]:
 
 
 def _reference_edges(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Link each read to its most recent preceding defining cell.
+    """Link each external read to its most recent preceding defining cell.
 
-    Reads do not update the origin. This preserves parallel branches that
-    consume the same value without making them depend on each other.
+    Reads do not update the origin, but a cell that reads and then redefines a
+    value (including in-place mutation of a subscript or attribute) becomes
+    the new origin for later cells.
     """
     last_occurrence: dict[str, int] = {}
     edges: dict[tuple[int, int], dict[str, Any]] = {}
@@ -129,26 +218,16 @@ def _reference_edges(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
             tree = ast.parse(source, filename=f"cell_{cell_index}.py")
         except SyntaxError:
             continue
-        loads = {
-            node.id
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
-        }
-        definitions = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                definitions.update(
-                    alias.asname or alias.name.split(".", 1)[0]
-                    for alias in node.names
-                )
-            elif isinstance(node, ast.ImportFrom):
-                definitions.update(alias.asname or alias.name for alias in node.names)
-            elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign,
-                                   ast.NamedExpr, ast.For, ast.AsyncFor,
-                                   ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                definitions.update(_definitions(node))
-        cross_cell_loads = loads - definitions
-        for name in sorted(cross_cell_loads):
+        locally_defined: set[str] = set()
+        cell_definitions: set[str] = set()
+        external_loads: set[str] = set()
+        for statement in tree.body:
+            loads, definitions = _statement_effects(statement)
+            external_loads.update(loads - locally_defined)
+            locally_defined.update(definitions)
+            cell_definitions.update(definitions)
+
+        for name in sorted(external_loads):
             origin = last_occurrence.get(name)
             if origin is None or origin == cell_index:
                 continue
@@ -162,7 +241,7 @@ def _reference_edges(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 },
             )
             edge["variables"].append(name)
-        for name in definitions:
+        for name in cell_definitions:
             last_occurrence[name] = cell_index
 
     for edge in edges.values():

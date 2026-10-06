@@ -30,5 +30,5 @@ if __name__ == '__main__':
     #     pickle.dump(nb_graph, outfile)
     curio_json = graph_to_curio(nb_graph, Path(nb_path).stem)
 
-    with open(f'curio_json_test_{str(datetime.datetime.today()).split()[0]}_2.json', 'w') as outfile:
+    with open(f'curio_json_test_{str(datetime.datetime.today()).split()[0]}.json', 'w') as outfile:
         json.dump(curio_json, outfile)

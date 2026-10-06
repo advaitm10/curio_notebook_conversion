@@ -10,6 +10,10 @@ order. A cell that feeds several independent cells branches to each of them;
 Curio merge-flow nodes are added only when a cell has multiple incoming graph
 edges.
 
+## Setting up the environment
+1. Install conda/miniconda
+2. Create a new environment using the environment.yaml file: `conda create --file environment.yml`
+
 ## End-to-end conversion
 
 From the repository root, run:
@@ -30,13 +34,8 @@ The script runs the complete conversion:
 5. `generate_curio_json.py` converts the graph to Curio JSON.
 
 The output is written to the current working directory with a name in the
-form `curio_json_test_YYYY-MM-DD_2.json`. For example, running the command on
-`test_data/simple_branches_2.ipynb` creates a dated JSON file in the repository
-root when the command is run from there. The script does not execute the
+form `curio_json_test_YYYY-MM-DD.json`. The script does not execute the
 notebook; it converts its source and dependencies.
-
-Install the Python dependencies used by the pipeline (`nbformat` and
-`networkx`) in the environment you use to run the command.
 
 ## Cell labels and Curio node types
 
